@@ -1,8 +1,10 @@
 import './App.css';
 import { useState, useEffect } from 'react';
 import { Auth } from './components/auth';
-import { db } from './config/firebase';
+import { db, auth, storage } from './config/firebase';
 import { getDocs, collection, addDoc, deleteDoc, doc, onSnapshot, updateDoc } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL, list } from 'firebase/storage';
+import { upload } from '@testing-library/user-event/dist/upload';
 
 function App() {
   const [movieList, setMovieList] = useState([]);
@@ -14,6 +16,13 @@ function App() {
 
   //Updated Title State
   const [UpdatedTitle, setUpdatedTitle] = useState('')
+
+  //Image Upload State
+  const [ uploadImage, setUploadImage ] = useState(null)
+
+  //Rendering Image
+  const [imageUrls, setImageUrls] = useState([]);
+
 
   const moviesCollectionRef = collection(db, "movies")
 
@@ -36,8 +45,21 @@ function App() {
     }
   }
 
+  const fetchImageUrls = async () => {
+    const filesFolderRef = ref(storage, 'projectFiles');
+    const filesList = await list(filesFolderRef);
+  
+    const urls = await Promise.all(filesList.items.map(async (item) => {
+      const downloadURL = await getDownloadURL(item);
+      return downloadURL;
+    }));
+  
+    setImageUrls(urls);
+  };
+
   useEffect(() => {
     getMovieList()
+    fetchImageUrls()
   }, [])
 
   const onSubmitMovie = async () => {
@@ -45,7 +67,8 @@ function App() {
       await addDoc(moviesCollectionRef, {
         title: newMovieTitle,
         releaseDate: newReleaseDate,
-        receivedAnOscar: isNewMovieOscar
+        receivedAnOscar: isNewMovieOscar,
+        userId: auth?.currentUser?.uid
       })
       setNewMovieTitle('')
       setNewReleaseDate(0)
@@ -57,9 +80,13 @@ function App() {
   }
 
   const onDeleteMovie = async (id) => {
-    const movieDoc = doc(db, "movies", id)
-    await deleteDoc(movieDoc)
-    // getMovieList()
+    try {
+      const movieDoc = doc(db, "movies", id)
+      await deleteDoc(movieDoc)
+      // getMovieList()
+    } catch (err) {
+      console.error(err)
+    }
   }
 
   const updateHandler = async (id) => {
@@ -71,6 +98,17 @@ function App() {
       console.error(error)
     }
   }
+
+  const uploadFile = async () => {
+    if(!uploadImage) return;
+    const filesFolderRef = ref(storage, `projectFiles/${uploadImage.name}`)
+    try {
+      await uploadBytes(filesFolderRef, uploadImage)
+    } catch (err) {
+      console.error(err)
+    }
+  }
+  
 
   return (
     <div className="App">
@@ -92,6 +130,31 @@ function App() {
             <button onClick={() => updateHandler(movie.id)}>Update Title</button>
           </div>
         ))}
+      </div>
+
+      <div>
+        <input type='file' onChange={(e) => setUploadImage(e.target.files[0])} />
+        <button onClick={uploadFile}>Upload File</button>
+      </div>
+      {/* <div>
+        {imageUrl && (
+          <div>
+            <h2>Uploaded Image:</h2>
+            <img src={imageUrl} alt="Uploaded" style={{ maxWidth: '100%' }} />
+          </div>
+        )}
+      </div> */}
+
+      <div>
+      {imageUrls.length > 0 && (
+        <div>
+          <h2>All Images in projectFiles:</h2>
+          {imageUrls.map((url, index) => (
+            <img key={index} src={url} alt={`Image-${index}`} style={{ maxWidth: '100%', margin: '5px' }} />
+          ))}
+        </div>
+      )}
+
       </div>
     </div>
   );
